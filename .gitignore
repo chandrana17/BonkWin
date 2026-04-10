@@ -1,4 +1,4 @@
-venv/
+﻿venv/
 build/
 dist/
 __pycache__/
@@ -9,6 +9,6 @@ settings.json
 stats.json
 *.pyc
 .env
-BONKWIN_PROGRESS_REPORT.md
+TantuSpank_PROGRESS_REPORT.md
 implementation_plan.md
 task.md
