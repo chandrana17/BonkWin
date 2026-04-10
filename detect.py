@@ -38,11 +38,11 @@ config = {
     "cooldown_ms": 300,
     "global_volume": 1.0,
     "last_used_pack": "pack_default",
-    "total_bonks": 0,
+    "total_spanks": 0,
     "custom_packs": [],
     "favorites": [],
 }
-bonks_since_save = 0
+spanks_since_save = 0
 config_lock = threading.Lock()
 SETTINGS_FILE = None
 
@@ -164,7 +164,7 @@ def load_config():
     with config_lock:
         sound_pack_name = config.get("last_used_pack", "pack_default")
 
-    log_output(f"[STEP 6] Loaded stats: {config['total_bonks']} total bonks")
+    log_output(f"[STEP 6] Loaded stats: {config['total_spanks']} total spanks")
     return config
 
 
@@ -201,10 +201,10 @@ def on_open_settings(icon, item):
 
 
 def on_reset_stats(icon, item):
-    """Reset bonk counter to 0."""
-    global bonks_since_save
-    config["total_bonks"] = 0
-    bonks_since_save = 0
+    """Reset Spank counter to 0."""
+    global spanks_since_save
+    config["total_spanks"] = 0
+    spanks_since_save = 0
     save_config()
     update_tray_menu()
     log_output("[STEP 6] Stats reset! Counter set to 0.")
@@ -216,11 +216,11 @@ def update_tray_menu():
     if icon is None:
         return
 
-    count = config["total_bonks"]
+    count = config["total_spanks"]
     if count == 1:
-        icon.title = f"TantuSpank â€” {count} Bonk Detected"
+        icon.title = f"TantuSpank â€” {count} Spank Detected"
     else:
-        icon.title = f"TantuSpank â€” {count} Bonks Detected"
+        icon.title = f"TantuSpank â€” {count} Spanks Detected"
 
     build_and_set_menu()
 
@@ -228,17 +228,17 @@ def update_tray_menu():
 def on_toggle_enable(icon, item):
     global is_enabled
     is_enabled = not is_enabled
-    count = config["total_bonks"]
+    count = config["total_spanks"]
     if is_enabled:
         if count == 1:
-            icon.title = f"TantuSpank â€” Listening ({count} Bonk)"
+            icon.title = f"TantuSpank â€” Listening ({count} Spank)"
         else:
-            icon.title = f"TantuSpank â€” Listening ({count} Bonks)"
+            icon.title = f"TantuSpank â€” Listening ({count} Spanks)"
     else:
         if count == 1:
-            icon.title = f"TantuSpank â€” Paused ({count} Bonk)"
+            icon.title = f"TantuSpank â€” Paused ({count} Spank)"
         else:
-            icon.title = f"TantuSpank â€” Paused ({count} Bonks)"
+            icon.title = f"TantuSpank â€” Paused ({count} Spanks)"
 
 
 def get_enable_state(item):
@@ -521,9 +521,9 @@ def build_and_set_menu():
     sens_items.append(pystray.MenuItem(f"Custom ({config.get('sensitivity', 0.4):.2f})", on_custom_sensitivity))
 
     # 3. Main Menu
-    count = config.get("total_bonks", 0)
-    stats_text = f"Total Bonks: {count}"
-    tooltip = f"TantuSpank — {count} Bonk{'s' if count != 1 else ''}"
+    count = config.get("total_spanks", 0)
+    stats_text = f"Total Spanks: {count}"
+    tooltip = f"TantuSpank — {count} Spank{'s' if count != 1 else ''}"
 
     is_current_favorite = sound_pack_name in fav_list
     fav_toggle_text = "⭐ Remove Current from Favorites" if is_current_favorite else "⭐ Add Current to Favorites"
@@ -600,7 +600,7 @@ def init_files():
     if not os.path.exists(ROADMAP_FILE):
         with open(ROADMAP_FILE, "w", encoding="utf-8") as f:
             f.write(
-                "# TantuSpank Roadmap\n\n## âœ… Done\n- Step 1: Detection engine\n- Step 2: Sound playback\n- Step 3: System tray icon\n- Step 4: Sound pack switcher\n- Step 5: Settings\n- Step 6: Bonk counter\n- Step 7: Auto-start\n- Step 8: Package as .exe\n- Step 9: Installer\n\n## ðŸ”„ In Progress\n- Optimizations (OPT-1 to OPT-5)\n"
+                "# TantuSpank Roadmap\n\n## âœ… Done\n- Step 1: Detection engine\n- Step 2: Sound playback\n- Step 3: System tray icon\n- Step 4: Sound pack switcher\n- Step 5: Settings\n- Step 6: Spank counter\n- Step 7: Auto-start\n- Step 8: Package as .exe\n- Step 9: Installer\n\n## ðŸ”„ In Progress\n- Optimizations (OPT-1 to OPT-5)\n"
             )
     if not os.path.exists(OUTPUT_FILE):
         with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
@@ -644,7 +644,7 @@ def main():
         safe_pack_name = repr(sound_pack_name)[1:-1]
         if sound_enabled:
             log_output(
-                f"[STEP 2] Sound pack loaded ({len(sounds)} sound(s) from pack '{safe_pack_name}') - mixer will initialize on first bonk"
+                f"[STEP 2] Sound pack loaded ({len(sounds)} sound(s) from pack '{safe_pack_name}') - mixer will initialize on first spank"
             )
         else:
             log_output(
@@ -776,7 +776,7 @@ def main():
         base_floor = 0.20 - (sens * 0.16) # sens=1.0 -> 0.04 (picks up tap), sens=0.0 -> 0.20 (requires hard hit)
         trigger_threshold = max(base_floor, avg_floor * multiplier)
         
-        # Lower cooldown so fast rapid bonks are not skipped
+        # Lower cooldown so fast rapid Spanks are not skipped
         cooldown_seconds = config.get("cooldown_ms", 150) / 1000.0
 
         # LOCKOUT FIX: Simple lockout prevents double-counting one transient
@@ -790,16 +790,16 @@ def main():
 
             log_output(f"[STEP 2] Knock detected! Intensity: {intensity:.2f}")
 
-            # Process bonk — ONLY runs on confirmed triggers
-            global bonks_since_save
+            # Process Spank — ONLY runs on confirmed triggers
+            global spanks_since_save
             with config_lock:
-                config["total_bonks"] += 1
-                bonks_since_save += 1
+                config["total_spanks"] += 1
+                spanks_since_save += 1
 
-            if bonks_since_save >= 5:
+            if spanks_since_save >= 5:
                 threading.Thread(target=save_config, daemon=True).start()
                 with config_lock:
-                    bonks_since_save = 0
+                    spanks_since_save = 0
 
             if icon:
                 threading.Thread(target=update_tray_menu, daemon=True).start()
@@ -808,7 +808,7 @@ def main():
                 current_sounds = sounds.copy()
 
             if sound_enabled and current_sounds:
-                # OPT-6: Lazy initialize pygame mixer on first bonk
+                # OPT-6: Lazy initialize pygame mixer on first Spank
                 if not pygame_initialized:
                     try:
                         pygame.mixer.init()

@@ -7,7 +7,7 @@ TantuSpank is an innovative Python-based background audio engine. It captures au
 
 ### 1. Audio Engine & Detection Logic
 - Built a robust audio energy calculation function using `numpy` and `sounddevice`.
-- Implemented dual-threshold volume detection to accurately differentiate between a "high" bonk and a "low" bonk.
+- Implemented dual-threshold volume detection to accurately differentiate between a "high" Spank and a "low" Spank.
 - Created debounce mechanisms to prevent glitchy repetitive sound overlapping.
 
 ### 2. Multi-Pack Architecture
@@ -32,7 +32,7 @@ TantuSpank is an innovative Python-based background audio engine. It captures au
 - Deployed a final Inno Setup installer (`TantuSpank_Setup.exe`) configured to use lowest privileges to ensure 100% compliance with Windows Smart App Control out of the box, supplemented by a Portable `.zip` version for easy and robust distribution.
 
 ### 6. Technical Polish
-- Overhauled and wiped legacy references to old codebases ("BonkWin").
+- Overhauled and wiped legacy references to old codebases ("TantuSpank").
 - Replaced the placeholder tray icons with the main `TantuSpank` transparent hammer logo.
 - Cleaned up development temporary python scripts and logging outputs, and stabilized the production branch.
 
