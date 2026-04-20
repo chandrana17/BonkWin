@@ -1,0 +1,9 @@
+# TantuSpank v1.0.0 — Dependencies
+# Install: pip install -r requirements.txt
+
+pygame==2.6.1
+Pillow==12.2.0
+psutil==7.2.2
+numpy==2.4.3
+sounddevice==0.5.5
+pystray>=0.19.5

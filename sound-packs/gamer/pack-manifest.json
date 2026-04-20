@@ -1,0 +1,8 @@
+{
+  "id": "gamer",
+  "name": "Gamer",
+  "description": "Gaming culture. Halo, CS:GO, GTA, Mario and more.",
+  "sounds": 10,
+  "adult": false,
+  "warning": null
+}

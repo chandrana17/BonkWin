@@ -1,0 +1,8 @@
+{
+  "id": "dank",
+  "name": "Dank",
+  "description": "Classic internet memes. Cast a spell, dank crying.",
+  "sounds": 5,
+  "adult": false,
+  "warning": null
+}

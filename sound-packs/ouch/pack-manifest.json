@@ -1,0 +1,9 @@
+{
+  "id": "ouch",
+  "name": "Ouch",
+  "description": "Pain sounds. Ahh, raaaah, uwu. Contains some 18+ files.",
+  "sounds": 5,
+  "adult": false,
+  "warning": null,
+  "has_adult_files": true
+}

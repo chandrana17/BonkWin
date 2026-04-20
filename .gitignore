@@ -1,4 +1,4 @@
-﻿venv/
+venv/
 build/
 dist/
 __pycache__/
@@ -12,3 +12,15 @@ stats.json
 TantuSpank_PROGRESS_REPORT.md
 implementation_plan.md
 task.md
+OUTPUT.md
+*.zip
+TantuSpank_Portable/
+security_audit_report.txt
+tantuspank.log
+tantuspank.log.*
+.agents/
+
+*.exe
+skills-lock.json
+*.img
+*.exe

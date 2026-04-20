@@ -1,71 +1,116 @@
-# TantuSpank ðŸ”¨
+# 🔨 TantuSpank
 
-**Bonk your laptop. It bonks back. Works on ANY Windows laptop.**
+**Your laptop fights back.** Knock on your desk — it screams, cracks, and counts every hit.
 
-TantuSpank is a lightweight Windows system tray utility that transforms your laptop into an interactive, audio-reactive device. It listens for physical knocks, taps, or thuds on your laptop chassis or desk and responds with satisfying sound effects. No special hardware requiredâ€”just your built-in microphone and a bit of FFT magic.
-
----
-
-## âœ¨ Features
-
-- ðŸŽ¤ **Smart Detection** â€” Advanced FFT filtering isolates physical impacts from speech and background noise.
-- ðŸ”Š **Sound Packs** â€” Swap between built-in packs (Default, Retro, Nature) or add your own .wav files.
-- âš¡ **0% Idle CPU** â€” Optimized RMS pre-filtering ensures the detection engine sleeps when you're silent.
-- ðŸ“Š **Bonk Counter** â€” Persistent tracking of your lifetime "bonks" with milestone stats.
-- ðŸš€ **Auto-Start** â€” One-click toggle from the tray to launch at Windows startup.
-- ðŸ–¥ï¸ **System Tray** â€” Lives quietly in your taskbar with a polished hammer iconâ€”right-click to manage everything.
+Windows tray app that detects physical knocks via microphone FFT analysis and plays sound effects. No internet. No AI. No telemetry. Fully local, privacy-first.
 
 ---
 
-## ðŸš€ Installation
+## ✨ Features
 
-You have two easy ways to get TantuSpank:
+- 🎯 **Real-time knock detection** — FFT analysis with dual-threshold (soft/hard hits)
+- 🔊 **7 built-in sound packs** — Dank, Default, Gamer, Indian Brainrot, Ouch, Rizz, Sigma
+- 🔀 **Full-rotation shuffle** — No repeat until every sound has played
+- 💥 **Screen crack overlay** — Transparent, click-through crack effect on hard hits
+- 🔥 **Streak combos** — 3+ rapid knocks trigger special combo sounds
+- 🎚️ **Live sensitivity slider** — Adjust detection from quiet room to noisy room
+- 🔞 **18+ content filter** — Global toggle + per-file control for adult audio
+- ⭐ **Favorites** — Quick-access to your preferred sound packs
+- 📊 **Stats** — Total spanks, daily count, personal best
+- 🚀 **Launch at startup** — One-click toggle, no admin required
+- 🔧 **Auto-calibration** — Measures ambient noise on first launch
+- ⚡ **0% idle CPU** — RMS pre-filter skips FFT when no sound detected
 
-### Option 1 (Recommended: Portable)
-1. Go to the [Releases](https://github.com/chandrana17/TantuSpank/releases) page.
-2. Download `TantuSpank_Portable.zip`.
-3. Extract it to your Desktop or Documents folder.
-4. Double-click `TantuSpank.exe` to run. No installation required!
+## 📦 Installation
 
-### Option 2 (Windows Installer)
-1. Download and run `TantuSpank_Setup.exe`.
-2. Proceed through the setup wizard (installs natively to your local AppData for maximum compatibility).
+### Portable (No Install)
+1. Download `TantuSpank_Portable.zip` from [Releases](https://github.com/chandrana17/TantuSpank/releases)
+2. Extract anywhere
+3. Run `TantuSpank.exe`
 
-Once running, TantuSpank will appear in your system tray. Give your desk a solid knock to test!
+### Installer
+1. Download `TantuSpank_Setup_v1.0.0.exe` from [Releases](https://github.com/chandrana17/TantuSpank/releases)
+2. Run installer — installs to `%LOCALAPPDATA%\TantuSpank`
+3. No admin required
 
----
+## 🎵 Sound Packs
 
-## ðŸ§  How It Works
+Sound packs live in the `sound-packs/` directory. Each pack has:
+```
+sound-packs/
+├── ouch/
+│   ├── pack-manifest.json
+│   ├── sound1.mp3
+│   └── sound2.mp3
+├── combo/          ← streak combo sounds
+└── ...
+```
 
-TantuSpank uses real-time digital signal processing (DSP) to distinguish physical shocks from airborne sound:
-- **Low-Pass Filtering**: Isolates frequencies below 300Hz (where thuds live).
-- **Double-Hit Confirmation**: Prevents false triggers from single sharp noises like keyboard clicks.
-- **Adaptive Baseline**: Maintains a rolling 2-second ambient noise average to maintain sensitivity in different environments.
-- **Silent Crash Recovery**: Automatically reconnects to the microphone if the input is lost or the system wakes from sleep.
+### pack-manifest.json
+```json
+{
+  "id": "ouch",
+  "name": "Ouch",
+  "adult": false,
+  "warning": ""
+}
+```
 
----
+### Adding Custom Packs
+1. Create a folder in `sound-packs/`
+2. Drop `.mp3`, `.wav`, or `.ogg` files inside
+3. A manifest is auto-created on next launch
+4. Or use **Select Custom File** from the tray menu
 
-## ðŸ“‚ Sound Packs
+## 🔒 Privacy
 
-Swap packs via the tray menu to change the vibe:
-- `pack_default`: Classic percussion thuds.
-- `pack_retro`: 8-bit style arcade bleeps.
-- `pack_nature`: Organic wood and stone impact sounds.
+- **No internet** — Zero network calls, zero telemetry
+- **No recording** — Audio processed in-memory, discarded after each 20ms block
+- **No cloud** — All settings stored locally at `%LOCALAPPDATA%\TantuSpank\`
+- **No admin** — Runs entirely in user space
+- **Security audited** — See `security_audit_report.txt`
 
-**Custom Sounds**: You can dynamically select ANY `.wav` or `.mp3` file from anywhere on your PC! Just right-click the tray icon and navigate to **Custom Audio -> Select Custom Audio...**. Once selected, the engine will permanently remember your custom sound.
+## 🛠️ Building from Source
 
----
+### Prerequisites
+- Python 3.12+
+- Windows 10/11
 
-## ðŸ¤ Contributing
+### Setup
+```bash
+git clone https://github.com/chandrana17/TantuSpank.git
+cd TantuSpank
+pip install -r requirements.txt
+python detect.py
+```
 
-Contributions are welcome! If you have optimized detection algorithms or new sound packs, feel free to open a Pull Request.
+### Build Executable
+```bash
+pip install pyinstaller
+pyinstaller TantuSpank.spec
+```
+Output: `dist/TantuSpank.exe`
 
----
+### Build Installer
+1. Install [Inno Setup](https://jrsoftware.org/isinfo.php)
+2. Build exe first (above)
+3. Compile `installer.iss`
 
-## ðŸ“„ License
+## 📋 Dependencies
 
-This project is licensed under the **MIT License**.
+| Package | Version | Purpose |
+|---|---|---|
+| pygame | 2.6.1 | Audio playback |
+| Pillow | 12.2.0 | Tray icon + overlay images |
+| psutil | 7.2.2 | RAM monitoring |
+| numpy | 2.4.3 | FFT analysis |
+| sounddevice | 0.5.5 | Microphone input |
+| pystray | latest | System tray UI |
 
----
+## 📄 License
 
-**Made with ðŸ”¨ and way too many desk knocks.**
+MIT — See [LICENSE](LICENSE)
+
+## 🤝 Credits
+
+Made by [TantuCore](https://github.com/chandrana17)

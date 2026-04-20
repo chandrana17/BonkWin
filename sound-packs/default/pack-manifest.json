@@ -1,0 +1,8 @@
+{
+  "id": "default",
+  "name": "Default",
+  "description": "Classic default sounds. Anime wow, fart, faaah.",
+  "sounds": 3,
+  "adult": false,
+  "warning": null
+}
