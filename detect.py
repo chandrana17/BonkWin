@@ -91,7 +91,6 @@ _prank_cd_window_lock = threading.Lock()
 # Device monitoring state
 device_monitor_thread = None
 device_monitor_running = False
-last_audio_devices = set()
 device_sounds = []
 device_sounds_lock = threading.Lock()
 cached_device_sounds = []

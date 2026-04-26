@@ -19,7 +19,7 @@ VSVersionInfo(
         StringStruct(u'FileDescription', u'Physical Knock Detection Tool'),
         StringStruct(u'FileVersion', u'1.0.0'),
         StringStruct(u'InternalName', u'TantuSpank'),
-        StringStruct(u'LegalCopyright', u'Copyright (c) 2026 TantuCore Studio'),
+        StringStruct(u'LegalCopyright', u'Copyright (c) 2026 Samarjeet Chand'),
         StringStruct(u'OriginalFilename', u'TantuSpank.exe'),
         StringStruct(u'ProductName', u'TantuSpank'),
         StringStruct(u'ProductVersion', u'1.0.0')])

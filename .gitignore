@@ -1,30 +1,45 @@
+# Build artifacts
 venv/
 build/
 dist/
 __pycache__/
 *.spec
-.ruff_cache/
+*.pyc
+*.exe
+nuitka_dist/
+detect.build/
 Output/
+
+# IDE & linter caches
+.ruff_cache/
+.agents/
+
+# User data & logs
 settings.json
 stats.json
-*.pyc
 .env
+tantuspank.log
+tantuspank.log.*
+
+# Dev-only files
 TantuSpank_PROGRESS_REPORT.md
 implementation_plan.md
 task.md
 OUTPUT.md
-*.zip
-TantuSpank_Portable/
 security_audit_report.txt
-tantuspank.log
-tantuspank.log.*
-.agents/
-
-*.exe
+iscc_paths.txt
 skills-lock.json
+TantuSpank_Portable/
+
+# Media & archives
+*.zip
 *.img
-*.exe
+
+# Internal docs (not for public)
+24th April updated.md
 AI_PROTOCOL.md
 GEMINI.md
 .cursorrules
+COMPETITOR_ANALYSIS.md
+ROADMAP.md
 scratch/

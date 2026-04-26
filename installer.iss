@@ -1,4 +1,4 @@
-; TantuSpank v1.1.0 — Inno Setup installer script
+; TantuSpank v1.0.0 — Inno Setup installer script
 ; No admin required. Installs to %LOCALAPPDATA%\TantuSpank.
 
 #define MyAppName "TantuSpank"
@@ -28,7 +28,7 @@ WizardStyle=modern
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany=TantuCore Studio
 VersionInfoDescription=TantuSpank Utility
-VersionInfoCopyright=Copyright (C) 2026 TantuCore Studio
+VersionInfoCopyright=Copyright (C) 2026 Samarjeet Chand
 VersionInfoProductName=TantuSpank
 VersionInfoOriginalFileName=TantuSpank.exe
 
