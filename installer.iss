@@ -20,15 +20,15 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=Output
-OutputBaseFilename=setup
+OutputBaseFilename=TantuSpank_v1.0.0_Setup
 SetupIconFile=icon.ico
-Compression=none
-SolidCompression=no
+Compression=lzma
+SolidCompression=yes
 WizardStyle=modern
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany=TantuCore Studio
 VersionInfoDescription=TantuSpank Utility
-VersionInfoCopyright=Copyright (C) 2026 Samarjeet Chand
+VersionInfoCopyright=Copyright (C) 2026 TantuCore Studio
 VersionInfoProductName=TantuSpank
 VersionInfoOriginalFileName=TantuSpank.exe
 
@@ -39,8 +39,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "dist\TantuSpank\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Assets and sound-packs are already in the dist\TantuSpank folder thanks to COLLECT
+Source: "dist\TantuSpank.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "icon.png"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"
