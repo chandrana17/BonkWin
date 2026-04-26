@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0] — 2026-04-26
+### 🛡️ Security & Distribution
+- **Bypass Smart App Control**: Switched to Nuitka Stealth Build to prevent Windows 11 from blocking the app as "unknown".
+- **Binary Metadata**: Added official "TantuCore Studio" signatures and versioning info to the EXE properties.
+- **Portable ZIP**: Provided a standalone version that doesn't trigger "Installer" heuristics.
+
+## [1.1.1] — 2026-04-24
+### 🔊 New Features
+- **Device Connect Sounds**: Added automatic sound playback when USB microphones or audio devices are connected.
+- **Monitoring Engine**: Added background device enumeration thread.
+- **UI Update**: New "Device Connect Sounds" toggle in the Settings menu.
+
 ## [1.0.0] — 2026-04-19
 
 ### 🎉 Initial Public Release

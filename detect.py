@@ -8,6 +8,7 @@ import sys
 import time
 import logging
 import logging.handlers
+import subprocess
 import tempfile
 from datetime import date
 import pygame
@@ -19,7 +20,7 @@ import webbrowser
 from collections import deque
 
 import pystray
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 import psutil
 import numpy as np
 import sounddevice as sd
@@ -46,6 +47,7 @@ from constants import (
     PRANK_COOLDOWN_DEFAULT, PRANK_COOLDOWN_MIN, PRANK_COOLDOWN_MAX,
 )
 from prank_effects import PrankManager
+from updater import check_for_updates_async, has_update, get_update_info, open_download_page, on_check_updates_clicked
 
 # ═══════════════════════════════════════════════════════════════
 # GLOBAL STATE
@@ -86,6 +88,16 @@ _cooldown_window_lock = threading.Lock()
 _prank_cd_window = None
 _prank_cd_window_lock = threading.Lock()
 
+# Device monitoring state
+device_monitor_thread = None
+device_monitor_running = False
+last_audio_devices = set()
+device_sounds = []
+device_sounds_lock = threading.Lock()
+cached_device_sounds = []
+cached_device_sounds_lock = threading.Lock()
+device_sound_pack_id = "device_connect"
+
 # Donate popup ref
 _donate_window = None
 _donate_window_lock = threading.Lock()
@@ -108,6 +120,11 @@ successful_knock_count = 0
 
 # Pack manifest cache
 pack_registry = {}
+
+# Device Monitoring Globals
+last_drive_letters = set()
+last_audio_devices = set()
+last_mouse_devices = set()
 
 # Persistent config
 config = dict(DEFAULT_CONFIG)
@@ -178,6 +195,196 @@ def log_output(message):
 
 def init_files():
     _setup_file_logging()
+
+
+# ════════════════════════════════════════════════════════════════
+# DEVICE MONITORING
+# ════════════════════════════════════════════════════════════════
+
+def get_current_mouse_devices():
+    """Get set of currently connected HID Mouse devices using Raw Input API (Stealthy).
+    This bypasses PowerShell profile noise and security pop-outs.
+    """
+    try:
+        from ctypes import wintypes
+        import ctypes
+
+        class RAWINPUTDEVICELIST(ctypes.Structure):
+            _fields_ = [("hDevice", wintypes.HANDLE), ("dwType", wintypes.DWORD)]
+        
+        RIM_TYPEMOUSE = 0
+        
+        # 1. Get the number of devices
+        n_devices = wintypes.UINT()
+        res = ctypes.windll.user32.GetRawInputDeviceList(None, ctypes.byref(n_devices), ctypes.sizeof(RAWINPUTDEVICELIST))
+        if res < 0 or n_devices.value == 0:
+            return set()
+            
+        # 2. Get the actual device list
+        devices = (RAWINPUTDEVICELIST * n_devices.value)()
+        res = ctypes.windll.user32.GetRawInputDeviceList(ctypes.byref(devices), ctypes.byref(n_devices), ctypes.sizeof(RAWINPUTDEVICELIST))
+        if res < 0:
+            return set()
+        
+        mouse_ids = set()
+        for i in range(n_devices.value):
+            if devices[i].dwType == RIM_TYPEMOUSE:
+                # Use the device handle as a unique ID string
+                mouse_ids.add(str(devices[i].hDevice))
+        return mouse_ids
+    except Exception:
+        return set()
+
+
+def get_current_audio_devices():
+    """Get set of currently connected audio input devices."""
+    try:
+        devices = sd.query_devices()
+        audio_devices = set()
+        for i, dev in enumerate(devices):
+            if dev["max_input_channels"] > 0:  # Input device
+                audio_devices.add((i, dev["name"]))
+        return audio_devices
+    except Exception as e:
+        log_output(f"[DEVICE] Error querying devices: {e}")
+        return set()
+
+
+def load_device_connect_pack():
+    """Load device connect sounds."""
+    global device_sounds, device_sound_pack_id
+    new_sounds = []
+    
+    target = os.path.join(get_sound_packs_dir(), device_sound_pack_id)
+    
+    if os.path.exists(target) and os.path.isdir(target):
+        try:
+            for f in os.listdir(target):
+                if f.lower().endswith(AUDIO_EXTENSIONS):
+                    new_sounds.append(os.path.join(target, f))
+        except Exception as e:
+            log_output(f"[DEVICE PACK] List error: {e}")
+    new_sounds = sorted(list(set(new_sounds)))
+    
+    valid_sounds = [sf for sf in new_sounds if os.path.getsize(sf) >= MIN_FILE_SIZE]
+    
+    with device_sounds_lock:
+        device_sounds = valid_sounds
+        device_sound_pack_id = "device_connect"
+    
+    _cache_device_sounds()
+    log_output(f"[DEVICE PACK] '{device_sound_pack_id}' → {len(valid_sounds)} files")
+    return len(valid_sounds)
+
+
+def _cache_device_sounds():
+    """Pre-load device connect sound files as pygame.mixer.Sound objects."""
+    global cached_device_sounds
+    if not pygame_initialized:
+        return
+    
+    with device_sounds_lock:
+        current_files = device_sounds.copy()
+    
+    new_cache = []
+    for sf in current_files:
+        try:
+            if os.path.getsize(sf) < MIN_FILE_SIZE:
+                continue
+            snd = pygame.mixer.Sound(sf)
+            new_cache.append(snd)
+        except Exception as e:
+            log_output(f"[DEVICE CACHE] Skip {os.path.basename(sf)}: {e}")
+    
+    with cached_device_sounds_lock:
+        cached_device_sounds = new_cache
+    
+    log_output(f"[DEVICE CACHE] {len(new_cache)} device sounds loaded")
+
+
+def play_device_connect_sound(title="Device Connected", message="A new device was detected."):
+    """Play a random device connect sound and show a notification."""
+    global icon
+    
+    with cached_device_sounds_lock:
+        ready = cached_device_sounds.copy()
+    
+    # Try to load if empty
+    if not ready:
+        load_device_connect_pack()
+        with cached_device_sounds_lock:
+            ready = cached_device_sounds.copy()
+
+    # [REMOVED] tray_icon.notify(message, title) as per user request to bypass 'security pop-outs'
+    # and improve UX. The audio playback is the primary indicator.
+    pass
+
+    if not ready or not pygame_initialized:
+        return
+    
+    idx = random.randint(0, len(ready) - 1)
+    snd = ready[idx]
+    
+    try:
+        channel = snd.play()
+        if channel:
+            channel.set_volume(1.0)
+    except Exception as e:
+        log_output(f"[DEVICE AUDIO] Play error: {e}")
+
+
+def monitor_device_changes():
+    """Monitor for audio device, USB drives, AND HID Mouse connection events."""
+    global device_monitor_running, last_audio_devices, last_drive_letters, last_mouse_devices
+    
+    # Initial scans
+    last_audio_devices = get_current_audio_devices()
+    last_mouse_devices = get_current_mouse_devices()
+    try:
+        last_drive_letters = {p.device for p in psutil.disk_partitions()}
+    except Exception:
+        last_drive_letters = set()
+        
+    log_output(f"[DEVICE MONITOR] Started. Audio: {len(last_audio_devices)}, Drives: {len(last_drive_letters)}, Mice: {len(last_mouse_devices)}")
+    
+    while device_monitor_running:
+        try:
+            time.sleep(2)
+            if not device_monitor_running: break
+            if not is_device_connect_enabled(None): continue
+                
+            # 1. Audio Devices
+            current_audio = get_current_audio_devices()
+            new_audio = current_audio - last_audio_devices
+            if new_audio:
+                for dev in new_audio:
+                    log_output(f"[DEVICE] Audio Connected: {dev[1]}")
+                    play_device_connect_sound("Audio Device", f"Connected: {dev[1]}")
+            last_audio_devices = current_audio
+            
+            # 2. USB / Disks
+            try:
+                current_drives = {p.device for p in psutil.disk_partitions()}
+                new_drives = current_drives - last_drive_letters
+                if new_drives:
+                    for drv in new_drives:
+                        log_output(f"[DEVICE] Disk Connected: {drv}")
+                        play_device_connect_sound("Drive Connected", f"Drive {drv} is now available.")
+                last_drive_letters = current_drives
+            except Exception:
+                pass
+
+            # 3. HID Mouse (USB)
+            current_mice = get_current_mouse_devices()
+            new_mice = current_mice - last_mouse_devices
+            if new_mice:
+                log_output(f"[DEVICE] Mouse/HID Connected: {len(new_mice)} new IDs")
+                play_device_connect_sound("USB Device", "New USB/HID device detected!")
+            last_mouse_devices = current_mice
+            
+        except Exception as e:
+            log_output(f"[DEVICE MONITOR] Error: {e}")
+            time.sleep(5)
 
 
 def is_adult_file(filename):
@@ -594,24 +801,24 @@ def _show_adult_warning(message):
     root.title("Age Verification")
     root.attributes("-topmost", True)
     root.resizable(False, False)
-    root.configure(bg="#1a1a2e")
+    root.configure(bg="#080A0F")
     root.grab_set()  # modal
     w, h = 420, 200
     x = (root.winfo_screenwidth() // 2) - (w // 2)
     y = (root.winfo_screenheight() // 2) - (h // 2)
     root.geometry(f"{w}x{h}+{x}+{y}")
 
-    tk.Label(root, text="⚠️", font=("Segoe UI Emoji", 28), bg="#1a1a2e").pack(pady=(10, 0))
-    tk.Label(root, text=message, font=("Segoe UI", 10), fg="#e0e0e0", bg="#1a1a2e",
+    tk.Label(root, text="⚠️", font=("Segoe UI Emoji", 28), bg="#080A0F").pack(pady=(10, 0))
+    tk.Label(root, text=message, font=("Segoe UI", 10), fg="#e0e0e0", bg="#080A0F",
              wraplength=380, justify="center").pack(pady=10, padx=20)
 
-    btn_frame = tk.Frame(root, bg="#1a1a2e")
+    btn_frame = tk.Frame(root, bg="#080A0F")
     btn_frame.pack(pady=10)
     tk.Button(btn_frame, text="I am 18+ — Enable", command=on_confirm,
               bg="#e74c3c", fg="white", font=("Segoe UI", 10, "bold"),
               relief="flat", padx=15, pady=5, cursor="hand2").pack(side="left", padx=10)
     tk.Button(btn_frame, text="Cancel", command=on_cancel,
-              bg="#2c2c54", fg="#aaa", font=("Segoe UI", 10),
+              bg="#1A1D25", fg="#aaa", font=("Segoe UI", 10),
               relief="flat", padx=15, pady=5, cursor="hand2").pack(side="left", padx=10)
 
     root.bind("<Escape>", lambda e: on_cancel())
@@ -669,7 +876,7 @@ def _create_sound_manager():
     root.title("TantuSpank — Sound Manager")
     root.attributes("-topmost", True)
     root.resizable(False, False)
-    root.configure(bg="#16213e")
+    root.configure(bg="#080A0F")
 
     w = 700
     h = 500
@@ -683,13 +890,13 @@ def _create_sound_manager():
     allow_adult = config.get("allow_adult_audio", False)
 
     # Left pane: Pack list
-    left_frame = tk.Frame(root, bg="#1a1a2e", width=200)
+    left_frame = tk.Frame(root, bg="#0D1117", width=200)
     left_frame.pack(side="left", fill="y")
     left_frame.pack_propagate(False)
 
-    tk.Label(left_frame, text="Sound Packs", font=("Segoe UI", 12, "bold"), bg="#1a1a2e", fg="#e94560").pack(pady=10)
+    tk.Label(left_frame, text="Sound Packs", font=("Segoe UI", 12, "bold"), bg="#0D1117", fg="#E8FF47").pack(pady=10)
 
-    pack_listbox = tk.Listbox(left_frame, bg="#0f3460", fg="#e0e0e0", selectbackground="#e94560", borderwidth=0, highlightthickness=0, font=("Segoe UI", 10))
+    pack_listbox = tk.Listbox(left_frame, bg="#111822", fg="#e0e0e0", selectbackground="#E8FF47", selectforeground="#080A0F", borderwidth=0, highlightthickness=0, font=("Segoe UI", 10))
     pack_listbox.pack(fill="both", expand=True, padx=10, pady=10)
 
     packs = sorted(pack_registry.keys(), key=lambda k: pack_registry[k].get("name", k))
@@ -708,22 +915,34 @@ def _create_sound_manager():
             pack_listbox.insert(tk.END, pack_name)
 
     # Right pane: File list
-    right_frame = tk.Frame(root, bg="#16213e")
+    right_frame = tk.Frame(root, bg="#080A0F")
     right_frame.pack(side="right", fill="both", expand=True)
 
-    header_label = tk.Label(right_frame, text="Select a pack", font=("Segoe UI", 14, "bold"), bg="#16213e", fg="#e94560")
+    header_label = tk.Label(right_frame, text="Select a pack", font=("Segoe UI", 14, "bold"), bg="#080A0F", fg="#E8FF47")
     header_label.pack(pady=10)
 
-    canvas = tk.Canvas(right_frame, bg="#16213e", highlightthickness=0)
-    scrollbar = ttk.Scrollbar(right_frame, orient="vertical", command=canvas.yview)
-    scroll_frame = tk.Frame(canvas, bg="#16213e")
+    list_frame = tk.Frame(right_frame, bg="#080A0F")
+    list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+    canvas = tk.Canvas(list_frame, bg="#080A0F", highlightthickness=0)
+    scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+    scroll_frame = tk.Frame(canvas, bg="#080A0F")
+
+    def _configure_canvas(event):
+        if scroll_frame.winfo_reqwidth() != canvas.winfo_width():
+            canvas.itemconfigure(window_id, width=canvas.winfo_width())
 
     scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+    window_id = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+    canvas.bind("<Configure>", _configure_canvas)
     canvas.configure(yscrollcommand=scrollbar.set)
 
-    canvas.pack(side="top", fill="both", expand=True, padx=10, pady=5)
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    root.bind("<MouseWheel>", _on_mousewheel)
+
     scrollbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
 
     current_vars = {}
 
@@ -750,7 +969,7 @@ def _create_sound_manager():
             else:
                 if af not in favs:
                     favs.append(af)
-                btn.config(text="❤️", fg="#e94560")
+                btn.config(text="❤️", fg="#E8FF47")
             config["favorite_files"] = favs
 
     def on_pack_select(evt):
@@ -808,12 +1027,12 @@ def _create_sound_manager():
 
             fg_color = "#666" if is_blocked_by_filter else ("#e0e0e0" if not is_disabled else "#888")
 
-            row_frame = tk.Frame(scroll_frame, bg="#16213e")
+            row_frame = tk.Frame(scroll_frame, bg="#080A0F")
             row_frame.pack(fill="x", pady=2)
 
             cb = tk.Checkbutton(row_frame, text=display_name, variable=var,
-                                bg="#16213e", fg=fg_color, selectcolor="#0f3460",
-                                activebackground="#16213e", activeforeground="#e0e0e0",
+                                bg="#080A0F", fg=fg_color, selectcolor="#111822",
+                                activebackground="#080A0F", activeforeground="#e0e0e0",
                                 font=("Segoe UI", 10), anchor="w",
                                 state="disabled" if is_blocked_by_filter else "normal")
             
@@ -821,12 +1040,12 @@ def _create_sound_manager():
                 cb.pack(side="left", fill="x", expand=True)
             else:
                 # Can't disable custom files via checkbox in this view, just unlist them from UI
-                tk.Label(row_frame, text=display_name, bg="#16213e", fg="#e0e0e0", font=("Segoe UI", 10), anchor="w").pack(side="left", fill="x", expand=True, padx=5)
+                tk.Label(row_frame, text=display_name, bg="#080A0F", fg="#e0e0e0", font=("Segoe UI", 10), anchor="w").pack(side="left", fill="x", expand=True, padx=5)
 
             is_fav = abs_path in favs
             fav_btn = tk.Button(row_frame, text="❤️" if is_fav else "♡", font=("Segoe UI Emoji", 10),
-                                bg="#16213e", fg="#e94560" if is_fav else "#888", activebackground="#16213e",
-                                activeforeground="#ff4466", relief="flat", cursor="hand2")
+                                bg="#080A0F", fg="#E8FF47" if is_fav else "#888", activebackground="#080A0F",
+                                activeforeground="#D4E640", relief="flat", cursor="hand2")
             fav_btn.config(command=lambda f=abs_path, b=fav_btn: toggle_fav(f, b))
             fav_btn.pack(side="right", padx=10)
 
@@ -847,11 +1066,11 @@ def _create_sound_manager():
             _file_picker_window = None
         root.destroy()
 
-    btn_frame = tk.Frame(right_frame, bg="#16213e")
+    btn_frame = tk.Frame(right_frame, bg="#080A0F")
     btn_frame.pack(pady=10)
-    tk.Button(btn_frame, text="Apply Settings", command=on_apply, bg="#e94560", fg="white",
+    tk.Button(btn_frame, text="Apply Settings", command=on_apply, bg="#E8FF47", fg="#080A0F",
               font=("Segoe UI", 10, "bold"), relief="flat", padx=20, pady=5, cursor="hand2").pack(side="left", padx=10)
-    tk.Button(btn_frame, text="Close", command=on_close, bg="#2c2c54", fg="#aaa",
+    tk.Button(btn_frame, text="Close", command=on_close, bg="#1A1D25", fg="#aaa",
               font=("Segoe UI", 10), relief="flat", padx=20, pady=5, cursor="hand2").pack(side="left", padx=10)
 
     save_current_pack.current_pid = None
@@ -895,8 +1114,8 @@ def _create_sensitivity_slider():
     root.title("TantuSpank — Sensitivity")
     root.attributes("-topmost", True)
     root.resizable(False, False)
-    root.configure(bg="#16213e")
-    w, h = 340, 140
+    root.configure(bg="#080A0F")
+    w, h = 360, 140
     x = (root.winfo_screenwidth() // 2) - (w // 2)
     y = (root.winfo_screenheight() // 2) - (h // 2)
     root.geometry(f"{w}x{h}+{x}+{y}")
@@ -905,29 +1124,31 @@ def _create_sensitivity_slider():
         _sensitivity_window = root
 
     current_val = config.get("sensitivity", 0.75)
-    var = tk.DoubleVar(value=current_val)
+    var = tk.DoubleVar(value=current_val * 100)
 
     label = tk.Label(root, text=f"{int(current_val * 100)}%",
-                     font=("Segoe UI", 16, "bold"), fg="#e94560", bg="#16213e")
+                     font=("Segoe UI", 16, "bold"), fg="#E8FF47", bg="#080A0F")
     label.pack(pady=(12, 0))
 
     def on_slide(val):
         fval = float(val)
-        label.config(text=f"{int(fval * 100)}%")
+        snapped = round(fval / 25) * 25
+        var.set(snapped)
+        label.config(text=f"{snapped}%")
         with config_lock:
-            config["sensitivity"] = round(fval, 2)
+            config["sensitivity"] = snapped / 100.0
 
-    slider = ttk.Scale(root, from_=0.0, to=1.0, orient="horizontal",
+    slider = ttk.Scale(root, from_=0, to=100, orient="horizontal",
                        variable=var, command=on_slide, length=280)
     slider.pack(pady=8)
 
     # Labels below slider
-    label_frame = tk.Frame(root, bg="#16213e")
+    label_frame = tk.Frame(root, bg="#080A0F")
     label_frame.pack(fill="x", padx=30)
-    tk.Label(label_frame, text="Quiet Room", font=("Segoe UI", 8), fg="#888",
-             bg="#16213e").pack(side="left")
-    tk.Label(label_frame, text="Noisy Room", font=("Segoe UI", 8), fg="#888",
-             bg="#16213e").pack(side="right")
+    tk.Label(label_frame, text="Noisy Room\n(0%)", font=("Segoe UI", 8), fg="#888",
+             bg="#080A0F", justify="left").pack(side="left")
+    tk.Label(label_frame, text="Quiet Room\n(100%)", font=("Segoe UI", 8), fg="#888",
+             bg="#080A0F", justify="right").pack(side="right")
 
     def on_close():
         global _sensitivity_window
@@ -969,7 +1190,7 @@ def _create_cooldown_slider():
     root.title("TantuSpank — Bonk Cooldown")
     root.attributes("-topmost", True)
     root.resizable(False, False)
-    root.configure(bg="#16213e")
+    root.configure(bg="#080A0F")
     w, h = 380, 160
     x = (root.winfo_screenwidth() // 2) - (w // 2)
     y = (root.winfo_screenheight() // 2) - (h // 2)
@@ -982,11 +1203,11 @@ def _create_cooldown_slider():
     var = tk.IntVar(value=current_ms)
 
     label = tk.Label(root, text=f"{current_ms} ms",
-                     font=("Segoe UI", 16, "bold"), fg="#e94560", bg="#16213e")
+                     font=("Segoe UI", 16, "bold"), fg="#E8FF47", bg="#080A0F")
     label.pack(pady=(12, 0))
 
     desc = tk.Label(root, text="Wait time between bonk detections",
-                    font=("Segoe UI", 8), fg="#888", bg="#16213e")
+                    font=("Segoe UI", 8), fg="#888", bg="#080A0F")
     desc.pack()
 
     def on_slide(val):
@@ -999,12 +1220,12 @@ def _create_cooldown_slider():
                        orient="horizontal", variable=var, command=on_slide, length=320)
     slider.pack(pady=8)
 
-    label_frame = tk.Frame(root, bg="#16213e")
+    label_frame = tk.Frame(root, bg="#080A0F")
     label_frame.pack(fill="x", padx=30)
     tk.Label(label_frame, text="Rapid (100ms)", font=("Segoe UI", 8), fg="#888",
-             bg="#16213e").pack(side="left")
+             bg="#080A0F").pack(side="left")
     tk.Label(label_frame, text="Slow (3s)", font=("Segoe UI", 8), fg="#888",
-             bg="#16213e").pack(side="right")
+             bg="#080A0F").pack(side="right")
 
     def on_close():
         global _cooldown_window
@@ -1053,6 +1274,21 @@ def is_prank_hacked_on(item):
     return config.get("prank_hacked_enabled", True)
 
 
+# ════════════════════════════════════════════════════════════════
+# FEATURE: DEVICE CONNECT SOUNDS
+# ════════════════════════════════════════════════════════════════
+
+def on_toggle_device_connect(icon_ref, item):
+    with config_lock:
+        config["device_connect_enabled"] = not config.get("device_connect_enabled", False)
+    save_config()
+    build_and_set_menu()
+
+
+def is_device_connect_enabled(item):
+    return config.get("device_connect_enabled", False)
+
+
 def on_open_prank_cd_slider(icon_ref, item):
     global _prank_cd_window
     with _prank_cd_window_lock:
@@ -1076,7 +1312,7 @@ def _create_prank_cd_slider():
     root.title("TantuSpank — Prank Cooldown")
     root.attributes("-topmost", True)
     root.resizable(False, False)
-    root.configure(bg="#16213e")
+    root.configure(bg="#080A0F")
     w, h = 400, 160
     x = (root.winfo_screenwidth() // 2) - (w // 2)
     y = (root.winfo_screenheight() // 2) - (h // 2)
@@ -1089,11 +1325,11 @@ def _create_prank_cd_slider():
     var = tk.IntVar(value=current)
 
     label = tk.Label(root, text=_fmt_prank_cd(current),
-                     font=("Segoe UI", 16, "bold"), fg="#e94560", bg="#16213e")
+                     font=("Segoe UI", 16, "bold"), fg="#E8FF47", bg="#080A0F")
     label.pack(pady=(12, 0))
 
     desc = tk.Label(root, text="Wait time between prank triggers",
-                    font=("Segoe UI", 8), fg="#888", bg="#16213e")
+                    font=("Segoe UI", 8), fg="#888", bg="#080A0F")
     desc.pack()
 
     def on_slide(val):
@@ -1106,12 +1342,12 @@ def _create_prank_cd_slider():
                        orient="horizontal", variable=var, command=on_slide, length=340)
     slider.pack(pady=8)
 
-    label_frame = tk.Frame(root, bg="#16213e")
+    label_frame = tk.Frame(root, bg="#080A0F")
     label_frame.pack(fill="x", padx=30)
     tk.Label(label_frame, text="10s", font=("Segoe UI", 8), fg="#888",
-             bg="#16213e").pack(side="left")
+             bg="#080A0F").pack(side="left")
     tk.Label(label_frame, text="60m", font=("Segoe UI", 8), fg="#888",
-             bg="#16213e").pack(side="right")
+             bg="#080A0F").pack(side="right")
 
     def on_close():
         global _prank_cd_window
@@ -1311,13 +1547,74 @@ def on_toggle_favorite(icon_ref, item):
     build_and_set_menu()
 
 def on_about(icon_ref, item):
-    """Show about info and open website."""
-    if icon_ref:
+    """Show about dialog with TantuSpank info."""
+    def _show_about():
+        import tkinter as tk
+        from PIL import Image, ImageTk
+        root = tk.Tk()
+        root.title(f"About {APP_NAME}")
+        root.attributes("-topmost", True)
+        root.resizable(False, False)
+        root.configure(bg="#080A0F")
+        w, h = 420, 580  # Height adjusted for QR
+        x = (root.winfo_screenwidth() // 2) - (w // 2)
+        y = (root.winfo_screenheight() // 2) - (h // 2)
+        root.geometry(f"{w}x{h}+{x}+{y}")
+
+        tk.Label(root, text=f"👋 {APP_NAME}", font=("Segoe UI", 20, "bold"),
+                 fg="#E8FF47", bg="#080A0F").pack(pady=(18, 0))
+        tk.Label(root, text=f"v{APP_VERSION} - Strong & Good", font=("Segoe UI", 10, "italic"),
+                 fg="#888", bg="#080A0F").pack(pady=(0, 8))
+
+        about_text = (
+            "Privacy-first knock detection for Windows.\n"
+            "Bonk your laptop — hear a sound. That's it.\n\n"
+            "• FFT-powered knock detection (vibration isolation)\n"
+            "• 7 sound packs with 50+ sounds (Ouch, Anime, Hacked...)\n"
+            "• NEW: USB & Audio device connection alerts\n"
+            "• Prank effects: screen crack & hacked overlay\n"
+            "• Streak mode for combo bonks\n"
+            "• 100% local — your data stays on your machine\n\n"
+            "Made with ❤️ by TantuCore\n"
+            "Shipping fast. Built for you."
+        )
+        tk.Label(root, text=about_text, font=("Segoe UI", 10),
+                 fg="#CCCCCC", bg="#080A0F", justify="left", wraplength=380).pack(padx=20, pady=5)
+
+        # Show QR Code in About too!
         try:
-            icon_ref.notify(f"{APP_NAME} v{APP_VERSION}\nFree forever. Made by TantuCore.", APP_NAME)
-        except Exception:
+            qr_path = os.path.join(get_project_dir(), "assets", "donate_qr.png")
+            if not os.path.exists(qr_path) and hasattr(sys, "_MEIPASS"):
+                qr_path = os.path.join(sys._MEIPASS, "assets", "donate_qr.png")
+            
+            if os.path.exists(qr_path):
+                img = Image.open(qr_path)
+                img = img.resize((150, 150), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img, master=root)
+                lbl = tk.Label(root, image=photo, bg="#080A0F")
+                lbl.image = photo
+                lbl.pack(pady=5)
+                tk.Label(root, text="Scan to Support Samarjeet", font=("Segoe UI", 8), fg="#555", bg="#080A0F").pack()
+        except:
             pass
-    webbrowser.open(APP_URL)
+
+        def open_website():
+            webbrowser.open(APP_URL)
+
+        btn = tk.Button(root, text="Visit TantuCore", command=open_website,
+                        bg="#E8FF47", fg="#080A0F", font=("Segoe UI", 10, "bold"),
+                        relief="flat", padx=20, pady=8, cursor="hand2")
+        btn.pack(pady=(10, 5))
+
+        tk.Label(root, text="tantucore.online", font=("Segoe UI", 9),
+                 fg="#555", bg="#080A0F").pack(pady=(0, 10))
+
+        root.bind("<Escape>", lambda e: root.destroy())
+        root.protocol("WM_DELETE_WINDOW", root.destroy)
+        root.mainloop()
+
+    t = threading.Thread(target=_show_about, daemon=True)
+    t.start()
 
 
 def on_donate(icon_ref, item):
@@ -1343,7 +1640,7 @@ def _create_donate_popup():
     root.title(f"Support {APP_NAME}")
     root.attributes("-topmost", True)
     root.resizable(False, False)
-    root.configure(bg="#16213e")
+    root.configure(bg="#080A0F")
     w, h = DONATE_POPUP_SIZE
     x = (root.winfo_screenwidth() // 2) - (w // 2)
     y = (root.winfo_screenheight() // 2) - (h // 2)
@@ -1352,23 +1649,32 @@ def _create_donate_popup():
     with _donate_window_lock:
         _donate_window = root
 
-    tk.Label(root, text="Buy Me A Coffee", font=("Segoe UI", 16, "bold"), fg="#e94560", bg="#16213e").pack(pady=(12, 0))
-    tk.Label(root, text="Support the developer via UPI", font=("Segoe UI", 10), fg="#888", bg="#16213e").pack(pady=(0, 10))
+    tk.Label(root, text="Buy Me A Coffee", font=("Segoe UI", 16, "bold"), fg="#E8FF47", bg="#080A0F").pack(pady=(12, 0))
+    tk.Label(root, text="Support the developer via UPI", font=("Segoe UI", 10), fg="#888", bg="#080A0F").pack(pady=(0, 10))
 
     try:
-        from PIL import ImageTk
         qr_path = os.path.join(get_project_dir(), "assets", "donate_qr.png")
+        # Fallback for bundled assets
+        if not os.path.exists(qr_path) and hasattr(sys, "_MEIPASS"):
+            qr_path = os.path.join(sys._MEIPASS, "assets", "donate_qr.png")
+
         if os.path.exists(qr_path):
             img = Image.open(qr_path)
             img = img.resize((200, 200), Image.Resampling.LANCZOS)
-            photo = ImageTk.PhotoImage(img)
-            lbl = tk.Label(root, image=photo, bg="#16213e")
+            photo = ImageTk.PhotoImage(img, master=root)
+            lbl = tk.Label(root, image=photo, bg="#080A0F")
             lbl.image = photo  # keep ref
             lbl.pack(pady=5)
+        else:
+            log_output(f"[DONATE] QR not found at: {qr_path}")
+            tk.Label(root, text="(QR Code missing)", fg="#666", bg="#080A0F").pack(pady=5)
     except Exception as e:
-        tk.Label(root, text="(QR Code hidden or error)", fg="red", bg="#16213e").pack(pady=5)
+        log_output(f"[DONATE] QR error: {e}")
+        import traceback
+        log_output(traceback.format_exc())
+        tk.Label(root, text="(QR Code hidden or error)", fg="red", bg="#080A0F").pack(pady=5)
 
-    tk.Label(root, text=UPI_ID, font=("Segoe UI", 12, "bold"), fg="white", bg="#16213e").pack(pady=5)
+    tk.Label(root, text=UPI_ID, font=("Segoe UI", 12, "bold"), fg="white", bg="#080A0F").pack(pady=5)
 
     def copy_upi():
         root.clipboard_clear()
@@ -1377,7 +1683,7 @@ def _create_donate_popup():
         btn.config(text="Copied!")
         root.after(2000, lambda: btn.config(text="Copy UPI ID"))
 
-    btn = tk.Button(root, text="Copy UPI ID", command=copy_upi, bg="#e94560", fg="white", 
+    btn = tk.Button(root, text="Copy UPI ID", command=copy_upi, bg="#E8FF47", fg="#080A0F", 
                     font=("Segoe UI", 10, "bold"), relief="flat", padx=10, pady=5)
     btn.pack(pady=10)
 
@@ -1489,37 +1795,38 @@ def build_and_set_menu():
     tooltip = f"{APP_NAME} v{APP_VERSION} — {total} Spank{'s' if total != 1 else ''}"
 
     menu = pystray.Menu(
+        # ── Toggle Detection ──
         pystray.MenuItem("Enable Detection", on_toggle_enable, checked=get_enable_state),
         pystray.Menu.SEPARATOR,
+        # ── Stats Info ──
         pystray.MenuItem(f"Total: {total} | Today: {today} | Best: {best}", lambda: None, enabled=False),
         pystray.MenuItem(f"Sounds: {active_count} active / {total_files} total", lambda: None, enabled=False),
         pystray.Menu.SEPARATOR,
+        # ── Sound Packs ──
         pystray.MenuItem("Sound Packs", pystray.Menu(
             *pack_items,
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(f"Bonk Cooldown ({cooldown_ms}ms)...", on_open_cooldown_slider),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("🕒 Recent Custom Files", pystray.Menu(*recent_items)),
-            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Recent Custom Files", pystray.Menu(*recent_items)),
             pystray.MenuItem("🎵 Select Custom File...", on_select_custom_file),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("⚙️ Open Sound Manager...", on_open_file_picker),
+            pystray.MenuItem("⚙ Open Sound Manager...", on_open_file_picker),
         )),
-        pystray.Menu.SEPARATOR,
+        # ── Settings ──
         pystray.MenuItem("Settings", pystray.Menu(
             pystray.MenuItem(f"Adjust Sensitivity ({sens_pct}%)...", on_open_sensitivity_slider),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Allow 18+ Audio", on_toggle_adult_audio, checked=is_adult_audio_allowed),
-            pystray.Menu.SEPARATOR,
             pystray.MenuItem("Streak Mode", on_toggle_streak, checked=is_streak_enabled),
+            pystray.MenuItem("Device Connect Sounds", on_toggle_device_connect, checked=is_device_connect_enabled),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Reset Stats", on_reset_stats),
             pystray.MenuItem("Recalibrate", on_recalibrate),
-            pystray.MenuItem("Launch at Startup", toggle_startup, checked=is_startup_enabled),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Launch at Startup", toggle_startup, checked=is_startup_enabled),
             pystray.MenuItem("Open Settings File", on_open_settings),
         )),
-        pystray.Menu.SEPARATOR,
+        # ── Prank Effects ──
         pystray.MenuItem("Prank Effects", pystray.Menu(
             pystray.MenuItem("Crack Effect (Spacebar)", on_toggle_prank_crack, checked=is_prank_crack_on),
             pystray.MenuItem("Hacked Effect (Enter)", on_toggle_prank_hacked, checked=is_prank_hacked_on),
@@ -1527,6 +1834,13 @@ def build_and_set_menu():
             pystray.MenuItem(f"Prank Cooldown ({_fmt_prank_cd(prank_cd_s)})...", on_open_prank_cd_slider),
         )),
         pystray.Menu.SEPARATOR,
+        # ── Updates ──
+        pystray.MenuItem(
+            lambda item: f"⬇ Download Update ({get_update_info()[0]})" if has_update() else "Check for Updates",
+            lambda i, it: open_download_page(i, it) if has_update() else on_check_updates_clicked(i, it),
+        ),
+        pystray.Menu.SEPARATOR,
+        # ── Footer ──
         pystray.MenuItem(f"About {APP_NAME} v{APP_VERSION}", on_about),
         pystray.MenuItem("☕ Buy Me a Coffee", on_donate),
         pystray.MenuItem("Quit", on_quit),
@@ -1590,9 +1904,19 @@ def main():
     global prank_manager
     prank_manager = PrankManager(crack_overlay, config, config_lock, save_config, log_output)
     prank_manager.start()
+    
+    # Init device monitoring
+    global device_monitor_thread, device_monitor_running, last_audio_devices, device_sounds, device_sounds_lock, cached_device_sounds, cached_device_sounds_lock, device_sound_pack_id
+    device_monitor_running = True
+    device_monitor_thread = threading.Thread(target=monitor_device_changes, daemon=True)
+    device_monitor_thread.start()
 
     # Scan packs
     scan_packs()
+    
+    # Load device connect sounds
+    if "device_connect" in pack_registry:
+        load_device_connect_pack()
 
     if pack_registry:
         with config_lock:
@@ -1695,10 +2019,14 @@ def main():
 
         raw_rms = np.sqrt(np.mean(audio_data ** 2))
         if raw_rms < RMS_FLOOR:
-            ambient_history.append(raw_rms)
+            ambient_history.append(RMS_FLOOR)
             return
 
-        fft_data = np.fft.rfft(audio_data)
+        # Apply Hanning window for better frequency isolation (Sensi Detection Improvement)
+        window = np.hanning(len(audio_data))
+        windowed_audio = audio_data * window
+        
+        fft_data = np.fft.rfft(windowed_audio)
         freqs = np.fft.rfftfreq(len(audio_data), 1 / SAMPLE_RATE)
         filtered_fft = fft_data * (freqs < FREQ_CUTOFF)
         filtered_audio = np.fft.irfft(filtered_fft)
@@ -1714,19 +2042,23 @@ def main():
             sens = config.get("sensitivity", DEFAULT_SENSITIVITY)
             baseline_mult = config.get("baseline_multiplier", 1.0)
 
-        multiplier = 5.0 - (sens * 3.5)
-        base_floor = 0.10 - (sens * 0.08)
+        # Sensitivity scaling
+        # 0.0 (0%) -> Noisy Room -> high threshold
+        # 1.0 (100%) -> Quiet Room -> low threshold
+        multiplier = 6.0 - (sens * 4.5)
+        base_floor = 0.15 - (sens * 0.14)
+        
         trigger_threshold = max(base_floor, avg_floor * multiplier) * baseline_mult
         hard_threshold = trigger_threshold * HARD_HIT_MULTIPLIER
         cooldown_seconds = config.get("cooldown_ms", DEFAULT_COOLDOWN_MS) / 1000.0
 
-        # Trigger check using raw_rms for sensitivity, while avg_floor is based on filtered signal
-        if raw_rms > trigger_threshold and current_time - last_trigger_time > cooldown_seconds:
+        # Use `rms` (low-pass filtered) to ensure we only detect thuds/knocks, not voices
+        if rms > trigger_threshold and current_time - last_trigger_time > cooldown_seconds:
             last_trigger_time = current_time
-            is_hard_hit = raw_rms > hard_threshold
+            is_hard_hit = rms > hard_threshold
 
-            # Volume scaling based on raw signal
-            volume_multiplier = max(MIN_VOLUME, min(raw_rms / (hard_threshold * 0.8), 1.0))
+            # Volume scaling based on filtered signal energy
+            volume_multiplier = max(MIN_VOLUME, min(rms / (hard_threshold * 0.8), 1.0))
 
             if performance_tracking:
                 successful_knock_count += 1
@@ -1745,7 +2077,7 @@ def main():
             if icon:
                 threading.Thread(target=update_tray_menu, daemon=True).start()
 
-            log_output(f"[SPANK] RMS={raw_rms:.4f} Vol={int(volume_multiplier*100)}% {'HARD' if is_hard_hit else 'soft'}")
+            log_output(f"[SPANK] RMS={rms:.4f} Vol={int(volume_multiplier*100)}% {'HARD' if is_hard_hit else 'soft'}")
 
             # Play sound
             with cached_sounds_lock:
@@ -1771,13 +2103,13 @@ def main():
             if is_hard_hit and config.get("crack_enabled", True) and crack_overlay:
                 crack_overlay.show()
 
-        # Only update ambient floor with non-knock signals (prevents threshold inflation)
-        if raw_rms <= trigger_threshold:
+        # Only update ambient floor with non-knock signals
+        if rms <= trigger_threshold:
             ambient_history.append(rms)
 
         # Periodic debug log (~every 2s)
         if random.random() < 0.01:
-            log_output(f"[DEBUG] rms={raw_rms:.4f} floor={avg_floor:.4f} thresh={trigger_threshold:.4f} bl={baseline_mult:.2f}")
+            log_output(f"[DEBUG] rms={rms:.4f} floor={avg_floor:.4f} thresh={trigger_threshold:.4f} bl={baseline_mult:.2f}")
 
         # RAM tracking
         if performance_tracking and random.random() < 0.01:
@@ -1807,6 +2139,12 @@ def main():
 
             if is_first_launch:
                 threading.Thread(target=_first_launch_notify, daemon=True).start()
+
+            # ── Auto update check (5s after launch) ──
+            def _delayed_update_check():
+                time.sleep(5)
+                check_for_updates_async(icon)
+            threading.Thread(target=_delayed_update_check, daemon=True).start()
 
             with sd.InputStream(
                 device=target_device_index,

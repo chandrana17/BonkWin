@@ -1,10 +1,10 @@
-; TantuSpank v1.0.0 — Inno Setup installer script
+; TantuSpank v1.1.0 — Inno Setup installer script
 ; No admin required. Installs to %LOCALAPPDATA%\TantuSpank.
 
 #define MyAppName "TantuSpank"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "TantuCore"
-#define MyAppURL "https://github.com/chandrana17/TantuSpank"
+#define MyAppURL "https://tantucore.online"
 #define MyAppExeName "TantuSpank.exe"
 
 [Setup]
@@ -19,11 +19,18 @@ DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-OutputBaseFilename=TantuSpank_Setup_v{#MyAppVersion}
+OutputDir=Output
+OutputBaseFilename=setup
 SetupIconFile=icon.ico
-Compression=lzma
-SolidCompression=yes
+Compression=none
+SolidCompression=no
 WizardStyle=modern
+VersionInfoVersion={#MyAppVersion}
+VersionInfoCompany=TantuCore Studio
+VersionInfoDescription=TantuSpank Utility
+VersionInfoCopyright=Copyright (C) 2026 Samarjeet Chand
+VersionInfoProductName=TantuSpank
+VersionInfoOriginalFileName=TantuSpank.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -32,13 +39,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "sound-packs\*"; DestDir: "{app}\sound-packs"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "assets\crack.png"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "assets\donate_qr.png"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "icon.png"; DestDir: "{app}"; Flags: ignoreversion
-; NOTE: Do NOT bundle settings.json — it is user-specific and created at runtime
+Source: "dist\TantuSpank\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Assets and sound-packs are already in the dist\TantuSpank folder thanks to COLLECT
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"

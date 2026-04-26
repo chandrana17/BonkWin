@@ -1,5 +1,6 @@
 """
-constants.py — TantuSpank v1.0.0
+constants.py — TantuSpank v1.1.0
+constants.py — TantuSpank v1.1.1
 Central configuration constants. Single source of truth.
 """
 
@@ -8,7 +9,7 @@ Central configuration constants. Single source of truth.
 # ═══════════════════════════════════════════════════════════════
 APP_VERSION = "1.0.0"
 APP_NAME = "TantuSpank"
-APP_URL = "https://github.com/chandrana17/TantuSpank"
+APP_URL = "https://tantucore.online"
 UPI_ID = "samarjeet2000@fam"
 DONATE_POPUP_SIZE = (300, 400)
 
@@ -119,6 +120,7 @@ DEFAULT_CONFIG = {
     "prank_crack_enabled": True,
     "prank_hacked_enabled": True,
     "prank_cooldown_seconds": 300,
+    "device_connect_enabled": True,
 }
 
 # ═══════════════════════════════════════════════════════════════
